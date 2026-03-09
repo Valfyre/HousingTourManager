@@ -1,0 +1,218 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/"
+   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+   xsi:schemaLocation="http://www.blizzard.com/wow/ui/ ..\FrameXML\UI.xsd">
+
+    <!-- Main Window -->
+    <Frame name="HousingTourManagerFrame" parent="UIParent" movable="true" enableMouse="true"
+           frameStrata="MEDIUM" hidden="true">
+        <Size x="500" y="540"/>
+        <Anchors>
+            <Anchor point="CENTER"/>
+        </Anchors>
+        <Backdrop bgFile="Interface\DialogFrame\UI-DialogBox-Background"
+                  edgeFile="Interface\DialogFrame\UI-DialogBox-Border"
+                  tile="true">
+            <BackgroundInsets left="11" right="12" top="12" bottom="11"/>
+            <TileSize val="32"/>
+            <EdgeSize val="32"/>
+        </Backdrop>
+
+        <!-- Title Bar -->
+        <Frame name="$parentTitleBar" enableMouse="true">
+            <Size x="500" y="30"/>
+            <Anchors>
+                <Anchor point="TOP" relativePoint="TOP" y="-8"/>
+            </Anchors>
+            <Scripts>
+                <OnMouseDown>HousingTourManagerFrame:StartMoving()</OnMouseDown>
+                <OnMouseUp>HousingTourManagerFrame:StopMovingOrSizing()</OnMouseUp>
+            </Scripts>
+        </Frame>
+
+        <FontString name="$parentTitle" inherits="GameFontNormalLarge" text="Housing Tour Manager">
+            <Anchors>
+                <Anchor point="TOP" relativePoint="TOP" y="-14"/>
+            </Anchors>
+        </FontString>
+
+        <!-- Close Button -->
+        <Button name="$parentCloseButton" inherits="UIPanelCloseButton">
+            <Anchors>
+                <Anchor point="TOPRIGHT" relativePoint="TOPRIGHT" x="2" y="2"/>
+            </Anchors>
+            <Scripts>
+                <OnClick>HousingTourManager.ToggleWindow()</OnClick>
+            </Scripts>
+        </Button>
+
+        <!-- Tab Buttons -->
+        <Button name="$parentTabSignup" inherits="GameMenuButtonTemplate" text="Sign Up">
+            <Size x="120" y="28"/>
+            <Anchors>
+                <Anchor point="TOPLEFT" relativePoint="TOPLEFT" x="14" y="-44"/>
+            </Anchors>
+            <Scripts>
+                <OnClick>HousingTourManager.ShowTab("signup")</OnClick>
+            </Scripts>
+        </Button>
+        <Button name="$parentTabQueue" inherits="GameMenuButtonTemplate" text="Queue">
+            <Size x="120" y="28"/>
+            <Anchors>
+                <Anchor point="TOPLEFT" relativePoint="TOPLEFT" x="140" y="-44"/>
+            </Anchors>
+            <Scripts>
+                <OnClick>HousingTourManager.ShowTab("queue")</OnClick>
+            </Scripts>
+        </Button>
+        <Button name="$parentTabManage" inherits="GameMenuButtonTemplate" text="Manage (RL)">
+            <Size x="140" y="28"/>
+            <Anchors>
+                <Anchor point="TOPLEFT" relativePoint="TOPLEFT" x="266" y="-44"/>
+            </Anchors>
+            <Scripts>
+                <OnClick>HousingTourManager.ShowTab("manage")</OnClick>
+            </Scripts>
+        </Button>
+
+        <!-- ===================== SIGNUP TAB ===================== -->
+        <Frame name="$parentSignupTab">
+            <Anchors>
+                <Anchor point="TOPLEFT" relativePoint="TOPLEFT" x="14" y="-80"/>
+            </Anchors>
+            <Size x="472" y="440"/>
+
+            <FontString name="$parentLabel1" inherits="GameFontNormal" text="House to Tour:">
+                <Anchors><Anchor point="TOPLEFT" x="0" y="0"/></Anchors>
+            </FontString>
+            <EditBox name="$parentHouseInput" inherits="InputBoxTemplate" autoFocus="false">
+                <Size x="440" y="28"/>
+                <Anchors><Anchor point="TOPLEFT" x="0" y="-20"/></Anchors>
+                <Scripts>
+                    <OnEnterPressed>this:ClearFocus()</OnEnterPressed>
+                </Scripts>
+            </EditBox>
+
+            <FontString name="$parentLabel2" inherits="GameFontNormal" text="Notes (optional):">
+                <Anchors><Anchor point="TOPLEFT" x="0" y="-60"/></Anchors>
+            </FontString>
+            <EditBox name="$parentNotesInput" inherits="InputBoxTemplate" autoFocus="false" multiLine="false">
+                <Size x="440" y="28"/>
+                <Anchors><Anchor point="TOPLEFT" x="0" y="-80"/></Anchors>
+                <Scripts>
+                    <OnEnterPressed>this:ClearFocus()</OnEnterPressed>
+                </Scripts>
+            </EditBox>
+
+            <Button name="$parentSubmitButton" inherits="GameMenuButtonTemplate" text="Add Me to Queue">
+                <Size x="180" y="32"/>
+                <Anchors><Anchor point="TOPLEFT" x="0" y="-124"/></Anchors>
+                <Scripts>
+                    <OnClick>HousingTourManager.SubmitSignup()</OnClick>
+                </Scripts>
+            </Button>
+
+            <Button name="$parentLeaveButton" inherits="GameMenuButtonTemplate" text="Leave Queue">
+                <Size x="140" y="32"/>
+                <Anchors><Anchor point="TOPLEFT" x="190" y="-124"/></Anchors>
+                <Scripts>
+                    <OnClick>HousingTourManager.LeaveQueue()</OnClick>
+                </Scripts>
+            </Button>
+
+            <FontString name="$parentStatusText" inherits="GameFontHighlight" text="">
+                <Anchors><Anchor point="TOPLEFT" x="0" y="-166"/></Anchors>
+            </FontString>
+        </Frame>
+
+        <!-- ===================== QUEUE TAB ===================== -->
+        <Frame name="$parentQueueTab" hidden="true">
+            <Anchors>
+                <Anchor point="TOPLEFT" relativePoint="TOPLEFT" x="14" y="-80"/>
+            </Anchors>
+            <Size x="472" y="440"/>
+
+            <FontString name="$parentHeader" inherits="GameFontNormalLarge" text="Current Queue">
+                <Anchors><Anchor point="TOPLEFT" x="0" y="0"/></Anchors>
+            </FontString>
+
+            <ScrollFrame name="$parentScrollFrame" inherits="UIPanelScrollFrameTemplate">
+                <Size x="450" y="370"/>
+                <Anchors><Anchor point="TOPLEFT" x="0" y="-24"/></Anchors>
+                <ScrollChild>
+                    <Frame name="$parentContent">
+                        <Size x="430" y="600"/>
+                    </Frame>
+                </ScrollChild>
+            </ScrollFrame>
+        </Frame>
+
+        <!-- ===================== MANAGE TAB ===================== -->
+        <Frame name="$parentManageTab" hidden="true">
+            <Anchors>
+                <Anchor point="TOPLEFT" relativePoint="TOPLEFT" x="14" y="-80"/>
+            </Anchors>
+            <Size x="472" y="440"/>
+
+            <FontString name="$parentHeader" inherits="GameFontNormalLarge" text="Raid Leader Controls">
+                <Anchors><Anchor point="TOPLEFT" x="0" y="0"/></Anchors>
+            </FontString>
+
+            <ScrollFrame name="$parentScrollFrame" inherits="UIPanelScrollFrameTemplate">
+                <Size x="450" y="310"/>
+                <Anchors><Anchor point="TOPLEFT" x="0" y="-24"/></Anchors>
+                <ScrollChild>
+                    <Frame name="$parentContent">
+                        <Size x="430" y="600"/>
+                    </Frame>
+                </ScrollChild>
+            </ScrollFrame>
+
+            <Button name="$parentAnnounceButton" inherits="GameMenuButtonTemplate" text="Announce Queue to Raid">
+                <Size x="200" y="32"/>
+                <Anchors><Anchor point="BOTTOMLEFT" x="0" y="4"/></Anchors>
+                <Scripts>
+                    <OnClick>HousingTourManager.AnnounceQueue()</OnClick>
+                </Scripts>
+            </Button>
+
+            <Button name="$parentClearButton" inherits="GameMenuButtonTemplate" text="Clear All">
+                <Size x="110" y="32"/>
+                <Anchors><Anchor point="BOTTOMLEFT" x="210" y="4"/></Anchors>
+                <Scripts>
+                    <OnClick>HousingTourManager.ClearQueue()</OnClick>
+                </Scripts>
+            </Button>
+        </Frame>
+
+    </Frame>
+
+    <!-- Minimap Button -->
+    <Button name="HousingTourManagerMinimapButton" parent="Minimap"
+            movable="true" enableMouse="true" frameStrata="MEDIUM">
+        <Size x="31" y="31"/>
+        <Anchors>
+            <Anchor point="CENTER" relativePoint="CENTER" x="80" y="0"/>
+        </Anchors>
+        <Layers>
+            <Layer level="BACKGROUND">
+                <Texture name="$parentBackground" file="Interface\Minimap\MiniMap-TrackingBorder"/>
+            </Layer>
+            <Layer level="ARTWORK">
+                <Texture name="$parentIcon" file="Interface\Icons\INV_Misc_Toy_05">
+                    <Size x="20" y="20"/>
+                    <Anchors><Anchor point="CENTER" x="0" y="1"/></Anchors>
+                </Texture>
+            </Layer>
+        </Layers>
+        <Scripts>
+            <OnClick>HousingTourManager.ToggleWindow()</OnClick>
+            <OnEnter>
+                GameTooltip:SetOwner(this, "ANCHOR_LEFT")
+                GameTooltip:SetText("Housing Tour Manager")
+                GameTooltip:Show()
+            </OnEnter>
+            <OnLeave>GameTooltip:Hide()</OnLeave>
+        </Scripts>
+    </Button>
+
+</Ui>

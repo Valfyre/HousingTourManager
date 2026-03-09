@@ -1,0 +1,10 @@
+## Interface: 120001
+## Title: Housing Tour Manager
+## Notes: Manages housing tour raid group queues with Raid Leader controls and live sync.
+## Author: Your Name
+## Version: 1.0.0
+## SavedVariables: HousingTourManagerDB
+## Category-enUS: Housing
+
+HousingTourManager.xml
+HousingTourManager.lua

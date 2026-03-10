@@ -9,16 +9,63 @@ local HTM = HousingTourManager
 -- Addon communication prefix (max 16 chars)
 local ADDON_PREFIX = "HousingTourMgr"
 
--- Queue table: each entry = { name, house, notes, status }
+-- Queue table: each entry = { name, house, plotNotes, status }
+-- plotNotes: public notes announced to raid
 -- status: "waiting" | "approved" | "done"
 local queue = {}
 local currentTab = "signup"
 
 -- Raid Assist privilege settings (toggled by Raid Leader only)
 local assistPrivileges = {
-    canReorder  = false,  -- Raid Assists may reorder the queue
-    canAnnounce = false,  -- Raid Assists may announce queue to raid chat
+    canReorder  = false,
+    canAnnounce = false,
+    canRemove   = false,
 }
+
+-- ============================================================
+--  UTILITY & PERMISSION HELPERS
+--  (defined first so all functions below can call them)
+-- ============================================================
+
+local function GetPlayerRaidRank()
+    if not IsInRaid() then
+        return UnitIsGroupLeader("player") and 2 or 0
+    end
+    for i = 1, GetNumGroupMembers() do
+        local name, rank = GetRaidRosterInfo(i)
+        if name and UnitName("player") == name then
+            return rank
+        end
+    end
+    return 0
+end
+
+local function IsRaidLeader()
+    return UnitIsGroupLeader("player")
+end
+
+local function IsRaidAssist()
+    return GetPlayerRaidRank() == 1
+end
+
+local function CanManage()
+    return IsRaidLeader()
+end
+
+local function CanReorder()
+    if IsRaidLeader() then return true end
+    return IsRaidAssist() and assistPrivileges.canReorder
+end
+
+local function CanAnnounce()
+    if IsRaidLeader() then return true end
+    return IsRaidAssist() and assistPrivileges.canAnnounce
+end
+
+local function CanRemove()
+    if IsRaidLeader() then return true end
+    return IsRaidAssist() and assistPrivileges.canRemove
+end
 
 -- ============================================================
 --  INITIALISATION
@@ -44,21 +91,38 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
 end)
 
 function HTM.Init()
-    -- Register addon comm prefix
     C_ChatInfo.RegisterAddonMessagePrefix(ADDON_PREFIX)
 
-    -- Slash commands
     SLASH_HOUSINGTOURMANAGER1 = "/htm"
     SLASH_HOUSINGTOURMANAGER2 = "/housingtour"
     SlashCmdList["HOUSINGTOURMANAGER"] = function(msg)
         HTM.ToggleWindow()
     end
 
-    -- Pre-fill player name in signup
+    -- Initialise saved variables table if it doesn't exist yet
+    if not HousingTourManagerSV then
+        HousingTourManagerSV = {}
+    end
+
+    -- Restore previously saved field values into the Sign Up form
+    if HousingTourManagerSV.savedHouse and HousingTourManagerSV.savedHouse ~= "" then
+        HousingTourManagerFrameSignupTabHouseInput:SetText(HousingTourManagerSV.savedHouse)
+    end
+    if HousingTourManagerSV.savedPlotNotes and HousingTourManagerSV.savedPlotNotes ~= "" then
+        HousingTourManagerFrameSignupTabPlotNotesInput:SetText(HousingTourManagerSV.savedPlotNotes)
+    end
+
     local playerName = UnitName("player")
     HTM.UpdateSignupStatus("Welcome, " .. playerName .. "! Fill in your details and join the queue.")
 
     print("|cff00ccffHousing Tour Manager|r loaded! Type |cffff9900/htm|r to open.")
+end
+
+-- Saves the current Sign Up field values to saved variables
+function HTM.SaveSignupFields()
+    if not HousingTourManagerSV then HousingTourManagerSV = {} end
+    HousingTourManagerSV.savedHouse     = HousingTourManagerFrameSignupTabHouseInput:GetText()
+    HousingTourManagerSV.savedPlotNotes = HousingTourManagerFrameSignupTabPlotNotesInput:GetText()
 end
 
 -- ============================================================
@@ -99,15 +163,14 @@ end
 
 function HTM.SubmitSignup()
     local playerName = UnitName("player")
-    local house = HousingTourManagerFrameSignupTabHouseInput:GetText()
-    local notes = HousingTourManagerFrameSignupTabNotesInput:GetText()
+    local house      = HousingTourManagerFrameSignupTabHouseInput:GetText()
+    local plotNotes  = HousingTourManagerFrameSignupTabPlotNotesInput:GetText()
 
     if not house or house == "" then
-        HTM.UpdateSignupStatus("|cffff4444Please enter the house you want to tour.|r")
+        HTM.UpdateSignupStatus("|cffff4444Please enter the plot you want to add to the queue.|r")
         return
     end
 
-    -- Check if already in queue
     for _, entry in ipairs(queue) do
         if entry.name == playerName then
             HTM.UpdateSignupStatus("|cffff4444You are already in the queue! Leave first to re-register.|r")
@@ -116,10 +179,10 @@ function HTM.SubmitSignup()
     end
 
     local entry = {
-        name   = playerName,
-        house  = house,
-        notes  = notes or "",
-        status = "waiting",
+        name      = playerName,
+        house     = house,
+        plotNotes = plotNotes or "",
+        status    = "waiting",
     }
     table.insert(queue, entry)
 
@@ -137,7 +200,7 @@ function HTM.LeaveQueue()
             return
         end
     end
-    HTM.UpdateSignupStatus("|cffaaaaааYou are not currently in the queue.|r")
+    HTM.UpdateSignupStatus("|cffaaaaaaYou are not currently in the queue.|r")
 end
 
 function HTM.UpdateSignupStatus(msg)
@@ -150,7 +213,6 @@ end
 
 function HTM.RefreshQueueDisplay()
     local content = HousingTourManagerFrameQueueTabScrollFrameContent
-    -- Clear old rows
     for i = content:GetNumChildren(), 1, -1 do
         local child = select(i, content:GetChildren())
         child:Hide()
@@ -170,7 +232,6 @@ function HTM.RefreshQueueDisplay()
         row:SetSize(420, 50)
         row:SetPoint("TOPLEFT", 0, yOffset)
 
-        -- Background highlight
         local bg = row:CreateTexture(nil, "BACKGROUND")
         bg:SetAllPoints()
         if i % 2 == 0 then
@@ -181,16 +242,19 @@ function HTM.RefreshQueueDisplay()
 
         local statusColor = "|cffaaaaaa"
         if entry.status == "approved" then statusColor = "|cff00ff00"
-        elseif entry.status == "done"     then statusColor = "|cff888888" end
+        elseif entry.status == "done" then statusColor = "|cff888888" end
 
         local nameText = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         nameText:SetPoint("TOPLEFT", 6, -6)
         nameText:SetText(i .. ". " .. statusColor .. entry.name .. "|r")
 
+        local houseStr = "Plot: |cffffd700" .. entry.house .. "|r"
+        if entry.plotNotes ~= "" then
+            houseStr = houseStr .. "  — " .. entry.plotNotes
+        end
         local houseText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
         houseText:SetPoint("TOPLEFT", 6, -22)
-        houseText:SetText("House: |cffffd700" .. entry.house .. "|r" ..
-            (entry.notes ~= "" and "  — " .. entry.notes or ""))
+        houseText:SetText(houseStr)
 
         yOffset = yOffset - 54
     end
@@ -212,14 +276,12 @@ function HTM.RefreshManageDisplay()
 
     local yOffset = -4
 
-    -- ── Raid Assist Privileges section (RL only) ──────────────────
     if IsRaidLeader() then
         local sectionLbl = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         sectionLbl:SetPoint("TOPLEFT", 4, yOffset)
         sectionLbl:SetText("|cffffd700Raid Assist Privileges|r")
         yOffset = yOffset - 18
 
-        -- Reorder toggle
         local reorderBtn = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
         reorderBtn:SetSize(200, 24)
         reorderBtn:SetPoint("TOPLEFT", 4, yOffset)
@@ -232,7 +294,6 @@ function HTM.RefreshManageDisplay()
             UpdateReorderLabel()
         end)
 
-        -- Announce toggle
         local announceBtn = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
         announceBtn:SetSize(200, 24)
         announceBtn:SetPoint("TOPLEFT", 210, yOffset)
@@ -247,7 +308,20 @@ function HTM.RefreshManageDisplay()
 
         yOffset = yOffset - 30
 
-        -- Divider
+        local removePrivBtn = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
+        removePrivBtn:SetSize(200, 24)
+        removePrivBtn:SetPoint("TOPLEFT", 4, yOffset)
+        local function UpdateRemovePrivLabel()
+            removePrivBtn:SetText("Remove: " .. (assistPrivileges.canRemove and "|cff00ff00ON|r" or "|cffff4444OFF|r"))
+        end
+        UpdateRemovePrivLabel()
+        removePrivBtn:SetScript("OnClick", function()
+            HTM.SetAssistPrivilege("canRemove", not assistPrivileges.canRemove)
+            UpdateRemovePrivLabel()
+        end)
+
+        yOffset = yOffset - 30
+
         local divider = content:CreateTexture(nil, "ARTWORK")
         divider:SetSize(420, 1)
         divider:SetPoint("TOPLEFT", 0, yOffset)
@@ -255,15 +329,14 @@ function HTM.RefreshManageDisplay()
         yOffset = yOffset - 10
 
     elseif IsRaidAssist() then
-        -- Show Assists their current privilege level
         local privText = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         privText:SetPoint("TOPLEFT", 4, yOffset)
         local reorderStr  = assistPrivileges.canReorder  and "|cff00ff00Reorder|r"  or "|cff888888Reorder|r"
         local announceStr = assistPrivileges.canAnnounce and "|cff00ff00Announce|r" or "|cff888888Announce|r"
-        privText:SetText("Your privileges: " .. reorderStr .. "  " .. announceStr)
+        local removeStr   = assistPrivileges.canRemove   and "|cff00ff00Remove|r"   or "|cff888888Remove|r"
+        privText:SetText("Your privileges: " .. reorderStr .. "  " .. announceStr .. "  " .. removeStr)
         yOffset = yOffset - 24
     end
-    -- ─────────────────────────────────────────────────────────────
 
     if #queue == 0 then
         local lbl = content:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
@@ -275,6 +348,7 @@ function HTM.RefreshManageDisplay()
 
     local playerCanReorder = CanReorder()
     local playerCanManage  = CanManage()
+    local playerCanRemove  = CanRemove()
 
     for i, entry in ipairs(queue) do
         local idx = i
@@ -296,12 +370,14 @@ function HTM.RefreshManageDisplay()
                           entry.status == "done"     and " |cff888888[Done]|r"     or ""
         nameText:SetText(i .. ". " .. entry.name .. statusTag)
 
+        local houseStr = "Plot: |cffffd700" .. entry.house .. "|r"
+        if entry.plotNotes ~= "" then
+            houseStr = houseStr .. "  — " .. entry.plotNotes
+        end
         local houseText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         houseText:SetPoint("TOPLEFT", 6, -20)
-        houseText:SetText("House: |cffffd700" .. entry.house .. "|r" ..
-            (entry.notes ~= "" and "  — " .. entry.notes or ""))
+        houseText:SetText(houseStr)
 
-        -- Approve / Remove (RL only)
         if playerCanManage then
             local approveBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
             approveBtn:SetSize(80, 22)
@@ -315,7 +391,9 @@ function HTM.RefreshManageDisplay()
                     HTM.RefreshQueueDisplay()
                 end
             end)
+        end
 
+        if playerCanRemove then
             local removeBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
             removeBtn:SetSize(70, 22)
             removeBtn:SetPoint("TOPRIGHT", -4, -4)
@@ -330,13 +408,16 @@ function HTM.RefreshManageDisplay()
             end)
         end
 
-        -- Move Up / Down (RL or privileged Assist)
         if playerCanReorder then
+            -- Offset arrows left to avoid overlapping Approve or Remove buttons
+            local arrowOffset     = (playerCanManage and -84) or (playerCanRemove and -84) or -4
+            local arrowOffsetDown = (playerCanManage and -50) or (playerCanRemove and -50) or 30
+
             if i > 1 then
                 local upBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
                 upBtn:SetSize(30, 22)
-                upBtn:SetPoint("TOPRIGHT", playerCanManage and -84 or -4, -28)
-                upBtn:SetText("▲")
+                upBtn:SetPoint("TOPRIGHT", arrowOffset, -28)
+                upBtn:SetText("Up")
                 upBtn:SetScript("OnClick", function()
                     queue[idx], queue[idx-1] = queue[idx-1], queue[idx]
                     HTM.BroadcastQueue()
@@ -348,8 +429,8 @@ function HTM.RefreshManageDisplay()
             if i < #queue then
                 local downBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
                 downBtn:SetSize(30, 22)
-                downBtn:SetPoint("TOPRIGHT", playerCanManage and -50 or 30, -28)
-                downBtn:SetText("▼")
+                downBtn:SetPoint("TOPRIGHT", arrowOffsetDown, -28)
+                downBtn:SetText("Dn")
                 downBtn:SetScript("OnClick", function()
                     queue[idx], queue[idx+1] = queue[idx+1], queue[idx]
                     HTM.BroadcastQueue()
@@ -382,14 +463,30 @@ function HTM.AnnounceQueue()
         SendChatMessage("The queue is currently empty.", channel)
     else
         for i, entry in ipairs(queue) do
-            local statusStr = entry.status == "approved" and " [Approved]" or
-                              entry.status == "done"     and " [Done]"     or ""
-            local msg = i .. ". " .. entry.name .. " — House: " .. entry.house
-            if entry.notes ~= "" then msg = msg .. " (" .. entry.notes .. ")" end
-            msg = msg .. statusStr
+            local msg = i .. ". " .. entry.name .. " — Plot: " .. entry.house
+            if entry.plotNotes ~= "" then msg = msg .. " - " .. entry.plotNotes end
             SendChatMessage(msg, channel)
         end
     end
+end
+
+function HTM.AnnounceNext()
+    if not CanAnnounce() then
+        print("|cffff4444Housing Tour Manager:|r You don't have permission to announce the queue.")
+        return
+    end
+
+    if #queue == 0 then
+        local channel = IsInRaid() and "RAID" or (IsInGroup() and "PARTY" or "SAY")
+        SendChatMessage("The housing tour queue is currently empty.", channel)
+        return
+    end
+
+    local entry = queue[1]
+    local channel = IsInRaid() and "RAID" or (IsInGroup() and "PARTY" or "SAY")
+    local msg = "Next up: " .. entry.name .. " — Plot: " .. entry.house
+    if entry.plotNotes ~= "" then msg = msg .. " - " .. entry.plotNotes end
+    SendChatMessage(msg, channel)
 end
 
 function HTM.ClearQueue()
@@ -401,6 +498,7 @@ function HTM.ClearQueue()
     HTM.BroadcastQueue()
     HTM.RefreshManageDisplay()
     HTM.RefreshQueueDisplay()
+    HTM.UpdateSignupStatus("|cffaaaaaaThe queue has been cleared by the Raid Leader.|r")
     print("|cff00ccffHousing Tour Manager:|r Queue cleared.")
 end
 
@@ -411,12 +509,15 @@ end
 function HTM.BroadcastQueue()
     if not IsInGroup() then return end
 
-    -- Serialize queue to a simple string: name|house|notes|status ; ...
+    -- Serialization format: name|house|plotNotes|status
     local parts = {}
     for _, entry in ipairs(queue) do
-        local safe_notes = entry.notes:gsub("[|;]", "")
-        local safe_house = entry.house:gsub("[|;]", "")
-        table.insert(parts, entry.name .. "|" .. safe_house .. "|" .. safe_notes .. "|" .. entry.status)
+        local safe_house     = entry.house:gsub("[|;]", "")
+        local safe_plotNotes = entry.plotNotes:gsub("[|;]", "")
+        table.insert(parts, entry.name
+            .. "|" .. safe_house
+            .. "|" .. safe_plotNotes
+            .. "|" .. entry.status)
     end
     local payload = table.concat(parts, ";")
 
@@ -430,32 +531,33 @@ function HTM.OnAddonMessage(prefix, message, channel, sender)
     local playerName = UnitName("player")
     if sender == playerName then return end
 
-    -- ── Privilege sync (from Raid Leader) ────────────────────────
     if message:sub(1, 5) == "PRIV:" then
         local payload = message:sub(6)
-        local r, a = payload:match("^([01]),([01])$")
+        local r, a, rm = payload:match("^([01]),([01]),([01])$")
         if r then
-            assistPrivileges.canReorder  = (r == "1")
-            assistPrivileges.canAnnounce = (a == "1")
+            assistPrivileges.canReorder  = (r  == "1")
+            assistPrivileges.canAnnounce = (a  == "1")
+            assistPrivileges.canRemove   = (rm == "1")
             HTM.RefreshManageDisplay()
         end
         return
     end
 
-    -- ── Queue sync ───────────────────────────────────────────────
     if message:sub(1, 6) == "QUEUE:" then
         local payload = message:sub(7)
         queue = {}
 
         if payload ~= "" then
             for part in payload:gmatch("[^;]+") do
-                local name, house, notes, status = part:match("^([^|]+)|([^|]*)|([^|]*)|([^|]+)$")
+                -- name|house|plotNotes|status
+                local name, house, plotNotes, status =
+                    part:match("^([^|]+)|([^|]*)|([^|]*)|([^|]+)$")
                 if name then
                     table.insert(queue, {
-                        name   = name,
-                        house  = house  or "",
-                        notes  = notes  or "",
-                        status = status or "waiting",
+                        name      = name,
+                        house     = house     or "",
+                        plotNotes = plotNotes or "",
+                        status    = status    or "waiting",
                     })
                 end
             end
@@ -470,50 +572,10 @@ function HTM.OnAddonMessage(prefix, message, channel, sender)
                 return
             end
         end
+
+        -- Player is no longer in the queue (e.g. RL cleared it) — reset status text
+        HTM.UpdateSignupStatus("|cffaaaaaaThe queue has been cleared by the Raid Leader.|r")
     end
-end
-
--- ============================================================
---  UTILITY & PERMISSION HELPERS
--- ============================================================
-
--- Returns the raid rank of the local player: 2=Leader, 1=Assist, 0=Member
-local function GetPlayerRaidRank()
-    if not IsInRaid() then
-        return UnitIsGroupLeader("player") and 2 or 0
-    end
-    for i = 1, GetNumGroupMembers() do
-        local name, rank = GetRaidRosterInfo(i)
-        if name and UnitName("player") == name then
-            return rank  -- 2=Leader, 1=Assist, 0=Member
-        end
-    end
-    return 0
-end
-
-local function IsRaidLeader()
-    return UnitIsGroupLeader("player")
-end
-
-local function IsRaidAssist()
-    return GetPlayerRaidRank() == 1
-end
-
--- Full management access: approve/remove/clear/change settings
-local function CanManage()
-    return IsRaidLeader()
-end
-
--- Reorder access: RL always; Assists if privilege granted
-local function CanReorder()
-    if IsRaidLeader() then return true end
-    return IsRaidAssist() and assistPrivileges.canReorder
-end
-
--- Announce access: RL always; Assists if privilege granted
-local function CanAnnounce()
-    if IsRaidLeader() then return true end
-    return IsRaidAssist() and assistPrivileges.canAnnounce
 end
 
 -- ============================================================
@@ -528,8 +590,8 @@ function HTM.SetAssistPrivilege(key, value)
     assistPrivileges[key] = value
     HTM.BroadcastPrivileges()
     HTM.RefreshManageDisplay()
-    local label = key == "canReorder" and "Reorder" or "Announce"
-    local state  = value and "|cff00ff00enabled|r" or "|cffff4444disabled|r"
+    local label = key == "canReorder" and "Reorder" or key == "canAnnounce" and "Announce" or "Remove"
+    local state = value and "|cff00ff00enabled|r" or "|cffff4444disabled|r"
     print("|cff00ccffHousing Tour Manager:|r Raid Assist privilege [" .. label .. "] " .. state .. ".")
 end
 
@@ -537,6 +599,7 @@ function HTM.BroadcastPrivileges()
     if not IsInGroup() then return end
     local payload = "PRIV:" .. (assistPrivileges.canReorder and "1" or "0")
                            .. "," .. (assistPrivileges.canAnnounce and "1" or "0")
+                           .. "," .. (assistPrivileges.canRemove and "1" or "0")
     local channel = IsInRaid() and "RAID" or "PARTY"
     C_ChatInfo.SendAddonMessage(ADDON_PREFIX, payload, channel)
 end

@@ -3,7 +3,7 @@
 ## Notes: Manages housing tour raid group queues with Raid Leader controls and live sync.
 ## Author: Your Name
 ## Version: 1.0.0
-## SavedVariables: HousingTourManagerDB
+## SavedVariables: HousingTourManagerSV
 ## Category-enUS: Housing
 
 HousingTourManager.xml
